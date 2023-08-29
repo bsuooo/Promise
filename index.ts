@@ -20,6 +20,7 @@ type onFulfilled<T, TResult1> = ((value: T) => TResult1 | PromiseLike<TResult1>)
 // promise失败调用的回调函数类型
 type onRejected<TResult2> = ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
 type onFinally = (() => void) | undefined | null
+
 const isFunction = (value: any): value is Function => typeof value === 'function';
 
 class MyPromise<T> {
@@ -129,6 +130,80 @@ class MyPromise<T> {
     return promise2
   }
 
+  static resolve = <T>(value?: T | PromiseLike<T>): MyPromise<T> => {
+    if (value instanceof MyPromise) {
+      return value
+    }
+    return new MyPromise<T>((resolve, reject) => {
+      resolve?.(value)
+    })
+  }
+
+  static reject = <T>(value?: T): MyPromise<T> => {
+    return new MyPromise<T>((resolve, reject) => {
+      reject?.(value)
+    })
+  }
+
+  public catch = <TResult>(onRejectedCallback: onRejected<TResult>): MyPromise<T | TResult> => {
+    return this.then(null, onRejectedCallback)
+  }
+
+  public finally = (onFinallyCallback: onFinally): MyPromise<T> => {
+    return this.then(
+      (value) => MyPromise.resolve(isFunction(onFinallyCallback) ? onFinallyCallback() : onFinallyCallback).then(() => value),
+      (reason) => MyPromise.resolve(isFunction(onFinallyCallback) ? onFinallyCallback() : onFinallyCallback).then(() => { throw reason })
+    )
+  }
+
+  // 接收一个 Promise 数组，返回一个新的 Promise 实例
+  // 新promise实例的状态由数组中的所有promise决定, 当所有promise完成后，新的promise才完成, 按数组顺序返回所有promise的结果
+  // 有一个promise报错, 新的promise就报错
+  static all = <T>(promises: []): MyPromise<T[]> => {
+    return new MyPromise((resolve, reject) => {
+      if (Array.isArray(promises)) {
+        let count = 0
+        let result: T[] = []
+        if (promises.length === 0) {
+          return resolve?.(promises)
+        }
+        promises.forEach((promise, index) => {
+          MyPromise.resolve(promise).then((res) => {
+            result[index] = res
+            count++
+            if (count === promises.length) {
+              resolve?.(result)
+            }
+          }, (err) => {
+            reject?.(err)
+          })
+        })
+      } else {
+        // 如果不是数组，就抛出错误
+        return reject?.(new TypeError('Argument is not iterable'))
+      }
+    })
+  }
+
+  // 接收一个 Promise 数组，返回一个新的 Promise 实例 
+  // 新promise实例的状态由数组中的所有promise决定, 当有一个promise完成后，新的promise就完成, 返回第一个完成的promise结果
+  // 有一个promise报错, 新的promise就报错
+  static race = <T>(promises: []): MyPromise<T> => {
+    return new MyPromise((resolve, reject) => {
+      if (Array.isArray(promises)) {
+        promises.forEach((promise) => {
+          MyPromise.resolve(promise).then((res) => {
+            return resolve?.(res)
+          }, (err) => {
+            return reject?.(err)
+          })
+        })
+      } else {
+        // 如果不是数组，就抛出错误
+        return reject?.(new TypeError('Argument is not iterable'))
+      }
+    })
+  }
 }
 
 const resolvePromise = <T>
@@ -196,16 +271,16 @@ const resolvePromise = <T>
 
 // 忽略 typescript 校验
 // @ts-ignore
-MyPromise.defer = MyPromise.deferred = function () {
-  let dfd: any = {}
-  dfd.promise = new MyPromise((resolve, reject) => {
-    dfd.resolve = resolve
-    dfd.reject = reject
-  })
-  return dfd
-}
+// MyPromise.defer = MyPromise.deferred = function () {
+//   let dfd: any = {}
+//   dfd.promise = new MyPromise((resolve, reject) => {
+//     dfd.resolve = resolve
+//     dfd.reject = reject
+//   })
+//   return dfd
+// }
 
-export = MyPromise
+// export = MyPromise
 
 // 参考链接https://juejin.cn/post/7084515321662406687
 
